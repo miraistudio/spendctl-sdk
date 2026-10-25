@@ -66,6 +66,6 @@ Security reports for the clients or the sidecar: **security@spendctl.dev**, not 
 
 Code in this repository is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
 
-"spendctl" and the spendctl logo are trademarks of Mirai Studio Co., Ltd. The licence does not grant permission to use the name for forks or derived services; call yours something else and say it is compatible with spendctl.
+"spendctl" and the spendctl logo are trademarks of Mirai Studio, Inc. The licence does not grant permission to use the name for forks or derived services; call yours something else and say it is compatible with spendctl.
 
-© Mirai Studio Co., Ltd. (株式会社みらいスタジオ), Tokyo.
+© Mirai Studio, Inc. (株式会社みらいスタジオ), Tokyo.

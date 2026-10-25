@@ -74,4 +74,4 @@ Errors are thrown as `Error` with the sidecar's message; an unreachable sidecar 
 
 ## Licence
 
-Apache-2.0. Source and issues: <https://github.com/miraistudio/spendctl-sdk>. "spendctl" is a trademark of Mirai Studio Co., Ltd.; the licence does not cover the name.
+Apache-2.0. Source and issues: <https://github.com/miraistudio/spendctl-sdk>. "spendctl" is a trademark of Mirai Studio, Inc.; the licence does not cover the name.
