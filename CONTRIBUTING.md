@@ -33,7 +33,6 @@ By submitting a contribution you agree that it is licensed under the Apache Lice
 1. Move "Unreleased" in `packages/client/CHANGELOG.md` to the new version and bump `version` in `packages/client/package.json`.
 2. `pnpm clean && pnpm install --frozen-lockfile && pnpm lint && pnpm build && pnpm test`.
 3. `cd packages/client && pnpm pack` and inspect the tarball (dist, README, LICENSE, NOTICE).
-4. `pnpm publish --access public` from `packages/client`, then tag `client-v<version>` and push the tag.
-5. Remove the "build from source" status line from the root README on the first publish.
+4. `npm publish --access public` from `packages/client` in an interactive terminal (the npm account uses a passkey, so npm opens the browser to confirm; a non-TTY shell fails with `EOTP`). Then tag `client-v<version>` and push the tag.
 
-npm trusted publishing from GitHub Actions is planned once the package exists on npm.
+npm trusted publishing from GitHub Actions is the plan for the next release, now that the package exists on npm.

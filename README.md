@@ -6,7 +6,7 @@ spendctl is the spend-policy control plane for AI agents: budgets, approvals, re
 
 This repository holds the thin clients that talk to that sidecar. They are Apache-2.0 and expose only the wire protocol. The sidecar, CLI and MCP server themselves are proprietary and ship on npm as `spendctl`; their docs live at <https://spendctl.dev/docs/>.
 
-**Status:** v0.1 pre-release. `@spendctl/client` is published to npm together with the first public spendctl release; until then, build it from source (`pnpm install && pnpm build`).
+**Status:** v0.1 — `@spendctl/client` is on npm (`npm i @spendctl/client`). The sidecar it talks to is in private beta; join the waitlist at <https://spendctl.dev>.
 
 ## Packages
 
