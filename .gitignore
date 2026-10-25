@@ -1,0 +1,14 @@
+# deps / build
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# os / tooling
+.DS_Store
+*.tgz
