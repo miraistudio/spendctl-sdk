@@ -33,6 +33,9 @@ By submitting a contribution you agree that it is licensed under the Apache Lice
 1. Move "Unreleased" in `packages/client/CHANGELOG.md` to the new version and bump `version` in `packages/client/package.json`.
 2. `pnpm clean && pnpm install --frozen-lockfile && pnpm lint && pnpm build && pnpm test`.
 3. `cd packages/client && pnpm pack` and inspect the tarball (dist, README, LICENSE, NOTICE).
-4. `npm publish --access public` from `packages/client` in an interactive terminal (the npm account uses a passkey, so npm opens the browser to confirm; a non-TTY shell fails with `EOTP`). Then tag `client-v<version>` and push the tag.
+4. Commit, then tag and push: `git tag -a client-v<version> -m "@spendctl/client <version>" && git push origin main --follow-tags`.
+5. The `Publish` workflow (`.github/workflows/publish.yml`) runs on the tag: it re-runs lint, build and tests, checks that the tag matches `package.json`, and publishes with npm trusted publishing (OIDC, provenance attached). No token and no 2FA prompt. If it fails, nothing was published; fix and re-tag with a new version (never move a tag).
 
-npm trusted publishing from GitHub Actions is the plan for the next release, now that the package exists on npm.
+The trusted publisher is registered on npmjs.com under the package settings: repository `miraistudio/spendctl-sdk`, workflow `publish.yml`. Changing either name there or here breaks publishing.
+
+Manual fallback (only if Actions is down): `npm publish --access public` from `packages/client` in an interactive terminal; the npm account uses a passkey, so npm opens the browser to confirm, and a non-TTY shell fails with `EOTP`.
