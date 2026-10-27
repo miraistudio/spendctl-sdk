@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "spendctl": {
+      "command": "npx",
+      "args": ["-y", "spendctl@latest", "mcp"],
+      "env": {
+        "SPENDCTL_AGENT": "${user_config.agent}",
+        "SPENDCTL_URL": "${user_config.sidecar_url}"
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "spendctl",
+  "displayName": "spendctl",
+  "version": "0.1.0",
+  "description": "Pay through the spendctl sidecar you run: every paid HTTP call (x402, MPP) is checked against your policy, held for approval above your thresholds, and written to the ledger. Tools: pay, check_budget, list_receipts.",
+  "author": {
+    "name": "Mirai Studio, Inc.",
+    "email": "security@spendctl.dev",
+    "url": "https://spendctl.dev"
+  },
+  "homepage": "https://spendctl.dev/docs/integrations/",
+  "repository": "https://github.com/miraistudio/spendctl-sdk",
+  "license": "Apache-2.0",
+  "keywords": ["payments", "x402", "mpp", "agents", "budget", "approvals", "receipts", "mcp"],
+  "icon": "./logo.png",
+  "documentationUrl": "https://spendctl.dev/docs/integrations/",
+  "supportUrl": "https://spendctl.dev/docs/",
+  "privacyPolicyUrl": "https://spendctl.dev/docs/privacy/",
+  "termsOfServiceUrl": "https://spendctl.dev/docs/terms/",
+  "userConfig": {
+    "agent": {
+      "type": "string",
+      "title": "Agent name",
+      "description": "The agent this Claude Code session pays as, exactly as defined under `agents:` in your spendctl.yaml (the init template defines `researcher`).",
+      "default": "researcher",
+      "required": true
+    },
+    "sidecar_url": {
+      "type": "string",
+      "title": "Sidecar URL",
+      "description": "Where `spendctl start` is listening. Leave the default unless you changed server.host or server.port.",
+      "default": "http://127.0.0.1:8402"
+    }
+  }
+}

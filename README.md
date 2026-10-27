@@ -14,7 +14,16 @@ This repository holds the thin clients that talk to that sidecar. They are Apach
 | --- | --- | --- | --- |
 | [`@spendctl/client`](packages/client) | TypeScript, zero dependencies | npm | available |
 | [`spendctl-sdk`](packages/python) | Python 3.10+, zero dependencies (optional `httpx` / `requests` integrations); import name `spendctl_sdk` | PyPI | available |
-| Claude Code / Cursor plugin wrappers | — | marketplaces | planned |
+| [`spendctl-sandbox`, `spendctl`](plugins) | Claude Code and Cursor plugins (MCP config + skill) | this repo is the marketplace | available |
+
+## Plugins
+
+The repository is also a plugin marketplace for Claude Code and Cursor (`plugins/`): `spendctl-sandbox` connects to the login-free sandbox, `spendctl` to the sidecar you run.
+
+```sh
+claude plugin marketplace add miraistudio/spendctl-sdk
+claude plugin install spendctl-sandbox@spendctl
+```
 
 ## How it fits together
 

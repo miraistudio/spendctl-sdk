@@ -84,3 +84,31 @@ jobs:
           uv venv "$RUNNER_TEMP/clean" --python ${{ matrix.python }}
           uv pip install --python "$RUNNER_TEMP/clean/bin/python" dist/*.whl
           "$RUNNER_TEMP/clean/bin/python" -c "import spendctl_sdk; assert callable(spendctl_sdk.pay); print(spendctl_sdk.__version__)"
+
+  # plugins/: Claude Code and Cursor wrappers. The Claude Code CLI validates manifests, skills and
+  # MCP configs without signing in.
+  plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate --strict ./plugins/spendctl-sandbox
+      - run: claude plugin validate --strict ./plugins/spendctl
+      - run: claude plugin validate --strict .
+      - name: Cursor manifests parse and name the same plugins
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const m = JSON.parse(fs.readFileSync(".cursor-plugin/marketplace.json", "utf8"));
+            for (const p of m.plugins) {
+              const dir = `${m.metadata.pluginRoot}/${p.source}`;
+              const manifest = JSON.parse(fs.readFileSync(`${dir}/.cursor-plugin/plugin.json`, "utf8"));
+              if (manifest.name !== p.name) throw new Error(`${dir}: name ${manifest.name} != ${p.name}`);
+              JSON.parse(fs.readFileSync(`${dir}/mcp.json`, "utf8"));
+              if (!fs.existsSync(`${dir}/${manifest.logo}`)) throw new Error(`${dir}: logo missing`);
+            }
+            console.log("ok", m.plugins.map((p) => p.name).join(", "));
+          '
