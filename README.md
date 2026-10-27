@@ -6,14 +6,14 @@ spendctl is the spend-policy control plane for AI agents: budgets, approvals, re
 
 This repository holds the thin clients that talk to that sidecar. They are Apache-2.0 and expose only the wire protocol. The sidecar, CLI and MCP server themselves are proprietary and ship on npm as `spendctl`; their docs live at <https://spendctl.dev/docs/>.
 
-**Status:** v0.1 — `@spendctl/client` is on npm (`npm i @spendctl/client`). The sidecar it talks to is in private beta; join the waitlist at <https://spendctl.dev>.
+**Status:** `@spendctl/client` is on npm (`npm i @spendctl/client`); `spendctl-sdk` for Python is in this repository and goes to PyPI with its first tag. The sidecar they talk to ships as `spendctl` on npm; the hosted control plane is in private beta (<https://spendctl.dev>).
 
 ## Packages
 
 | Package | Language | Registry | Status |
 | --- | --- | --- | --- |
 | [`@spendctl/client`](packages/client) | TypeScript, zero dependencies | npm | available |
-| `spendctl-sdk` | Python | PyPI | planned |
+| [`spendctl-sdk`](packages/python) | Python 3.10+, zero dependencies (optional `httpx` / `requests` integrations); import name `spendctl_sdk` | PyPI | first release pending |
 | Claude Code / Cursor plugin wrappers | — | marketplaces | planned |
 
 ## How it fits together
@@ -28,6 +28,14 @@ import { wrapFetch, readRefusal } from "@spendctl/client";
 const pay = wrapFetch({ agent: "researcher" }); // reads SPENDCTL_URL / SPENDCTL_AGENT by default
 const res = await pay("https://api.example.com/paid");
 const refusal = await readRefusal(res); // undefined when paid; otherwise why spendctl refused or is waiting for a human
+```
+
+```python
+from spendctl_sdk import httpx_client, read_refusal
+
+with httpx_client(agent="researcher") as http:  # same env vars; requests_session() and pay() also exist
+    res = http.get("https://api.example.com/paid")
+    refusal = read_refusal(res)  # None when paid
 ```
 
 Signing happens in the sidecar you run, against a wallet you own — a Coinbase CDP server wallet or your own key. spendctl never holds keys or funds.
