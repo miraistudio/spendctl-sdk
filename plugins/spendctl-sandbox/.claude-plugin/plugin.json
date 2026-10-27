@@ -1,0 +1,20 @@
+{
+  "name": "spendctl-sandbox",
+  "displayName": "spendctl sandbox",
+  "version": "0.1.0",
+  "description": "Login-free sandbox of the spendctl sidecar: budgets, allowlists, human approvals and receipts against mock paid APIs. Nothing to install, no real funds.",
+  "author": {
+    "name": "Mirai Studio, Inc.",
+    "email": "security@spendctl.dev",
+    "url": "https://spendctl.dev"
+  },
+  "homepage": "https://spendctl.dev/docs/sandbox/",
+  "repository": "https://github.com/miraistudio/spendctl-sdk",
+  "license": "Apache-2.0",
+  "keywords": ["payments", "x402", "mpp", "agents", "budget", "approvals", "sandbox", "mcp"],
+  "icon": "./logo.png",
+  "documentationUrl": "https://spendctl.dev/docs/sandbox/",
+  "supportUrl": "https://spendctl.dev/docs/",
+  "privacyPolicyUrl": "https://spendctl.dev/docs/privacy/",
+  "termsOfServiceUrl": "https://spendctl.dev/docs/terms/"
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "spendctl-sandbox": {
+      "type": "http",
+      "url": "https://mcp.spendctl.dev/mcp"
+    }
+  }
+}

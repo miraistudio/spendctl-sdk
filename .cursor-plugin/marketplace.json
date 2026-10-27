@@ -1,0 +1,28 @@
+{
+  "name": "spendctl",
+  "owner": {
+    "name": "Mirai Studio, Inc.",
+    "email": "security@spendctl.dev"
+  },
+  "metadata": {
+    "description": "spendctl for Cursor: a spend-policy sidecar for agents that pay with x402 or MPP. Try the login-free sandbox, or connect the sidecar you run.",
+    "version": "0.1.0",
+    "pluginRoot": "plugins"
+  },
+  "plugins": [
+    {
+      "name": "spendctl-sandbox",
+      "source": "spendctl-sandbox",
+      "description": "Login-free sandbox of the spendctl sidecar: budgets, allowlists, human approvals and receipts against mock paid APIs. Nothing to install, no real funds.",
+      "category": "payments",
+      "tags": ["payments", "x402", "mpp", "agents", "budget", "approvals", "sandbox"]
+    },
+    {
+      "name": "spendctl",
+      "source": "spendctl",
+      "description": "Pay through the spendctl sidecar you run (npx spendctl start): every paid call is checked against your policy, held for approval above your thresholds, and written to the ledger.",
+      "category": "payments",
+      "tags": ["payments", "x402", "mpp", "agents", "budget", "approvals", "receipts"]
+    }
+  ]
+}
