@@ -17,12 +17,24 @@ pnpm test      # vitest, runs against an in-process fake sidecar
 
 Node 22.13 or newer. Tests must not need a real sidecar, a wallet or network access.
 
+Python client (`packages/python`, [uv](https://docs.astral.sh/uv/)):
+
+```sh
+cd packages/python
+uv sync                      # creates .venv with the dev group (pytest, httpx, requests, ruff)
+uv run ruff format . && uv run ruff check .
+uv run pytest                # in-process fake sidecar, same rule: no network
+uv build                     # wheel + sdist into dist/
+```
+
+Python 3.10 or newer; `uv.lock` is committed and CI runs with `--locked`.
+
 ## Pull requests
 
 - One change per PR, with a test.
 - Commit messages and code comments in English; Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`) keep the changelog easy to write.
 - Keep the clients dependency-free. A new runtime dependency needs a strong reason in the PR.
-- Public API changes need a line in `packages/client/CHANGELOG.md` under "Unreleased".
+- Public API changes need a line in the package's `CHANGELOG.md` under "Unreleased" (`packages/client/CHANGELOG.md`, `packages/python/CHANGELOG.md`).
 
 ## Licence of contributions
 
@@ -39,3 +51,14 @@ By submitting a contribution you agree that it is licensed under the Apache Lice
 The trusted publisher is registered on npmjs.com under the package settings: repository `miraistudio/spendctl-sdk`, workflow `publish.yml`. Changing either name there or here breaks publishing.
 
 Manual fallback (only if Actions is down): `npm publish --access public` from `packages/client` in an interactive terminal; the npm account uses a passkey, so npm opens the browser to confirm, and a non-TTY shell fails with `EOTP`.
+
+### Python (`spendctl-sdk`)
+
+1. Move "Unreleased" in `packages/python/CHANGELOG.md` to the new version and bump `version` in `packages/python/pyproject.toml` and `__version__` in `src/spendctl_sdk/__init__.py` (the test `test_package_surface` pins it).
+2. `cd packages/python && uv sync --locked && uv run ruff format --check . && uv run ruff check . && uv run pytest && uv build`, then inspect `dist/`.
+3. Commit, then tag and push: `git tag -a python-v<version> -m "spendctl-sdk <version>" && git push origin main --follow-tags`.
+4. The `Publish (PyPI)` workflow (`.github/workflows/publish-python.yml`) re-runs the checks, verifies the tag matches `pyproject.toml`, builds, and publishes from the GitHub environment `pypi` with PyPI trusted publishing (OIDC, no token).
+
+The trusted publisher is registered on pypi.org (for the first release as a *pending publisher* under the account's "Publishing" page, before the project exists): project `spendctl-sdk`, owner `miraistudio`, repository `spendctl-sdk`, workflow `publish-python.yml`, environment `pypi`. The GitHub environment `pypi` is created on first use. Changing any of these names breaks publishing.
+
+Manual fallback: `uv publish` with a PyPI API token scoped to the project, from an interactive terminal; never store the token in the repository.

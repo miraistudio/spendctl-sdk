@@ -53,3 +53,34 @@ jobs:
         run: bun --eval "const m = await import('./packages/client/dist/index.js'); if (typeof m.wrapFetch !== 'function') process.exit(1)"
       - name: Deno imports the built package
         run: deno eval "const m = await import('./packages/client/dist/index.js'); if (typeof m.wrapFetch !== 'function') Deno.exit(1)"
+
+  # packages/python: spendctl-sdk on PyPI. Same fake-sidecar rule: no network, no wallet.
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: packages/python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+      - name: Build and inspect the wheel
+        run: |
+          uv build
+          unzip -l dist/*.whl | awk '{print $4}' | grep -q 'spendctl_sdk/py.typed'
+          unzip -l dist/*.whl | awk '{print $4}' | grep -q 'licenses/LICENSE'
+          unzip -l dist/*.whl | awk '{print $4}' | grep -q 'licenses/NOTICE'
+      - name: The wheel installs without dependencies and imports
+        run: |
+          uv venv "$RUNNER_TEMP/clean" --python ${{ matrix.python }}
+          uv pip install --python "$RUNNER_TEMP/clean/bin/python" dist/*.whl
+          "$RUNNER_TEMP/clean/bin/python" -c "import spendctl_sdk; assert callable(spendctl_sdk.pay); print(spendctl_sdk.__version__)"
