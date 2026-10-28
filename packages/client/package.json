@@ -1,6 +1,6 @@
 {
   "name": "@spendctl/client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Zero-dependency client for the spendctl sidecar: a fetch wrapper for agents and an admin client for humans.",
   "keywords": [
     "spendctl",

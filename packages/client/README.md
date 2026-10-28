@@ -65,6 +65,8 @@ import { AdminClient } from "@spendctl/client";
 
 const admin = new AdminClient({ token: process.env.SPENDCTL_ADMIN_TOKEN! });
 const { pending } = await admin.pending();
+// Each entry carries the terms the human is shown: payTo, network, asset, assetSymbol,
+// amountAtomic (sidecar 0.4 and later), plus the reasons it was held.
 await admin.approve(pending[0].id, "looks right");
 const csv = await admin.export("csv", { since: "2026-01-01" });
 const { text } = await admin.trace("att_…"); // agent→agent chain as text
