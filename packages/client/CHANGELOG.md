@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.1
+
 - `AdminClient.pending()` returns `PendingApproval[]` (exported): the whole approval record, including the terms a retry must match on sidecar 0.4 and later (`network`, `asset`, `assetSymbol`, `amountAtomic`, `payTo`), `reasons[].code`, `attemptId`, `status` and the decision fields.
 
 ## 0.1.0
