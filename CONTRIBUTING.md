@@ -46,11 +46,11 @@ By submitting a contribution you agree that it is licensed under the Apache Lice
 2. `pnpm clean && pnpm install --frozen-lockfile && pnpm lint && pnpm build && pnpm test`.
 3. `cd packages/client && pnpm pack` and inspect the tarball (dist, README, LICENSE, NOTICE).
 4. Commit, then tag and push: `git tag -a client-v<version> -m "@spendctl/client <version>" && git push origin main --follow-tags`.
-5. The `Publish` workflow (`.github/workflows/publish.yml`) runs on the tag: it re-runs lint, build and tests, checks that the tag matches `package.json`, and publishes with npm trusted publishing (OIDC, provenance attached). No token and no 2FA prompt. If it fails, nothing was published; fix and re-tag with a new version (never move a tag).
+5. The `Publish` workflow (`.github/workflows/publish.yml`) runs on the tag: it re-runs lint, build and tests, checks that the tag matches `package.json`, and publishes with npm trusted publishing (OIDC, provenance attached). No token and no 2FA prompt. If a check fails, nothing was published; fix and re-tag with a new version (never move a tag). If only the publish step fails with `ENEEDAUTH`, use the manual fallback below.
 
 The trusted publisher is registered on npmjs.com under the package settings: repository `miraistudio/spendctl-sdk`, workflow `publish.yml`. Changing either name there or here breaks publishing.
 
-Manual fallback (only if Actions is down): `npm publish --access public` from `packages/client` in an interactive terminal; the npm account uses a passkey, so npm opens the browser to confirm, and a non-TTY shell fails with `EOTP`.
+Manual fallback: on `main` at the tag, `pnpm build`, then `npm publish --access public` from `packages/client` in an interactive terminal; the npm account uses a passkey, so npm opens the browser to confirm, and a non-TTY shell fails with `EOTP`. Then re-run the failed `Publish` job: it sees the version on npm, skips the publish step and finishes green. This is the normal path while [npm/cli#9969](https://github.com/npm/cli/issues/9969) is open: this repository was created after GitHub's 2026-07-15 switch to immutable OIDC subject claims, which npm's trusted publishing does not accept yet, so the publish step fails with `ENEEDAUTH`. A manual publish carries no provenance attestation.
 
 ### Python (`spendctl-sdk`)
 
