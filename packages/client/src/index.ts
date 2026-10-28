@@ -44,6 +44,36 @@ export interface Receipt {
   [key: string]: string | number;
 }
 
+/** An approval waiting for a human, as `AdminClient.pending()` returns it. */
+export interface PendingApproval {
+  id: string;
+  attemptId: string;
+  agent: string;
+  status: "pending" | "approved" | "denied" | "expired";
+  createdAt: number;
+  expiresAt: number;
+  host: string;
+  path: string;
+  /** Amount in USD micros, as a decimal string. */
+  usdMicros?: string;
+  /**
+   * The terms the human is shown, copied from the held request (sidecar 0.4 and later). A retry
+   * that carries this approval must offer exactly these, or the sidecar refuses it with
+   * `approval_mismatch`.
+   */
+  network?: string;
+  asset?: string;
+  assetSymbol?: string;
+  amountAtomic?: string;
+  payTo?: string;
+  reasons: Array<{ code: string; message: string }>;
+  decidedAt?: number;
+  decidedBy?: string;
+  note?: string;
+  /** Fields a newer sidecar may add. */
+  [key: string]: unknown;
+}
+
 /** Body spendctl returns when it refuses, needs approval, or is in dry-run. */
 export interface SpendctlRefusal {
   error: "spendctl_denied" | "spendctl_approval_required" | "spendctl_dry_run" | string;
@@ -185,19 +215,7 @@ export class AdminClient {
   }
 
   pending() {
-    return this.request<{
-      pending: Array<
-        Record<string, unknown> & {
-          id: string;
-          agent: string;
-          host: string;
-          path: string;
-          usdMicros?: string;
-          reasons: Array<{ message: string }>;
-          expiresAt: number;
-        }
-      >;
-    }>("pending");
+    return this.request<{ pending: PendingApproval[] }>("pending");
   }
 
   approve(id: string, note?: string) {

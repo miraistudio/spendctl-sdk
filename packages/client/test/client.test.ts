@@ -76,12 +76,20 @@ function fakeSidecar(): Server {
           pending: [
             {
               id: "apr_1",
+              attemptId: "att_1",
               agent: "bot",
+              status: "pending",
+              createdAt: 0,
+              expiresAt: 0,
               host: "api.example.com",
               path: "/expensive",
               usdMicros: "250000",
-              reasons: [{ message: "over threshold" }],
-              expiresAt: 0,
+              network: "eip155:8453",
+              asset: "0xusdc",
+              assetSymbol: "USDC",
+              amountAtomic: "250000",
+              payTo: "0xseller",
+              reasons: [{ code: "approval_required", message: "over threshold" }],
             },
           ],
         });
@@ -285,9 +293,18 @@ describe("AgentClient", () => {
 describe("AdminClient", () => {
   const admin = () => new AdminClient({ url: base, token: ADMIN });
 
-  it("lists pending approvals", async () => {
+  it("lists pending approvals with the terms the human is shown", async () => {
     const { pending } = await admin().pending();
     expect(pending[0]).toMatchObject({ id: "apr_1", agent: "bot", host: "api.example.com" });
+    // Typed fields, not just present in the JSON.
+    const terms: Array<string | undefined> = [
+      pending[0]?.payTo,
+      pending[0]?.network,
+      pending[0]?.assetSymbol,
+      pending[0]?.amountAtomic,
+    ];
+    expect(terms).toEqual(["0xseller", "eip155:8453", "USDC", "250000"]);
+    expect(pending[0]?.reasons[0]?.code).toBe("approval_required");
     expect(seen[0]?.headers.authorization).toBe(`Bearer ${ADMIN}`);
   });
 
