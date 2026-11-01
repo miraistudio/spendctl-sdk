@@ -15,7 +15,7 @@
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
+    "@biomejs/biome": "2.6.4",
     "@types/node": "^22.18.0",
     "typescript": "7.0.2",
     "vitest": "5.0.5"
