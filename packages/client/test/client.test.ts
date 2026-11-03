@@ -53,6 +53,15 @@ function fakeSidecar(): Server {
           onBudgetExceeded: "deny",
           allow: ["*"],
           windows: [{ window: "daily", limit: "$1.00", spent: "$0.01", remaining: "$0.99" }],
+          endpoints: [
+            {
+              pattern: "api.example.com/search*",
+              window: "hourly",
+              limit: "$0.10",
+              spent: "$0.02",
+              remaining: "$0.08",
+            },
+          ],
         });
       }
       if (path === "/_spendctl/agent/receipts") {
@@ -61,9 +70,53 @@ function fakeSidecar(): Server {
           receipts: [{ id: "att_1", status: "settled", limit: url.searchParams.get("limit") }],
         });
       }
+      // Approvals as sidecar 0.7 answers them: apr_1 is pending, apr_done was approved, others unknown.
+      const view = (id: string, status: string, decided: Record<string, unknown> = {}) => ({
+        id,
+        status,
+        attempt: "att_2",
+        expiresAt: "2026-01-01T00:00:00.000Z",
+        decidedAt: null,
+        decidedBy: null,
+        note: null,
+        ...decided,
+      });
+      const approved = { decidedAt: "2025-12-31T23:59:00.000Z", decidedBy: "cli", note: "fine" };
+      const withdraw = /^\/_spendctl\/agent\/approvals\/([\w-]+)\/withdraw$/.exec(path);
+      if (withdraw) {
+        if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
+        const id = withdraw[1] as string;
+        if (id === "apr_done") {
+          return send(res, 409, {
+            error: "already_decided",
+            message: "Approval apr_done is already approved by cli (fine).",
+            approval: view(id, "approved", approved),
+          });
+        }
+        if (id !== "apr_1") return send(res, 404, { error: "not_found" });
+        const { note } = JSON.parse(body || "{}") as { note?: string };
+        return send(res, 200, {
+          approval: view(id, "withdrawn", {
+            decidedAt: "2025-12-31T23:59:30.000Z",
+            decidedBy: `agent:${req.headers["x-spendctl-agent"]}`,
+            note: note ?? null,
+          }),
+        });
+      }
       const approval = /^\/_spendctl\/agent\/approvals\/([\w-]+)$/.exec(path);
-      if (approval)
-        return send(res, 200, { id: approval[1], status: "pending", expiresAt: "2026-01-01T00:00:00.000Z" });
+      if (approval) {
+        const id = approval[1] as string;
+        if (id === "apr_done") return send(res, 200, view(id, "approved", approved));
+        if (id !== "apr_1") return send(res, 404, { error: "not_found" });
+        const wait = Number(url.searchParams.get("wait") ?? 0);
+        if (wait > 0) {
+          // A long poll nobody answers: hold the response until the wait runs out or the client leaves.
+          const timer = setTimeout(() => send(res, 200, view(id, "pending")), wait * 1000);
+          res.on("close", () => clearTimeout(timer));
+          return;
+        }
+        return send(res, 200, view(id, "pending"));
+      }
       return send(res, 404, { error: "not_found" });
     }
 
@@ -125,7 +178,10 @@ function fakeSidecar(): Server {
           message: "Needs a human.",
           attempt: "att_2",
           approval: "apr_1",
+          approvalExpiresAt: "2026-01-01T00:00:00.000Z",
+          hint: "Ask a human to run `spendctl approve apr_1`, then retry with header X-Spendctl-Approval: apr_1.",
           reasons: [{ code: "threshold", message: "over threshold" }],
+          requestId: req.headers["x-request-id"],
         },
         { "x-spendctl-attempt": "att_2", "x-spendctl-decision": "pending_approval" },
       );
@@ -242,6 +298,16 @@ describe("readRefusal", () => {
     expect(refusal?.reasons?.[0]?.code).toBe("threshold");
   });
 
+  it("types the approval deadline, the hint and the echoed request id", async () => {
+    const res = await wrapFetch({ url: base, agent: "bot" })("https://api.example.com/expensive", {
+      headers: { "x-request-id": "req-42" },
+    });
+    const refusal = await readRefusal(res);
+    const fields: Array<string | undefined> = [refusal?.approvalExpiresAt, refusal?.requestId];
+    expect(fields).toEqual(["2026-01-01T00:00:00.000Z", "req-42"]);
+    expect(refusal?.hint).toMatch(/X-Spendctl-Approval: apr_1/);
+  });
+
   it("parses a denial and leaves the body readable", async () => {
     const res = await wrapFetch({ url: base, agent: "bot" })("https://api.example.com/forbidden");
     const refusal = await readRefusal(res);
@@ -271,6 +337,12 @@ describe("AgentClient", () => {
     expect(budget.windows[0]).toMatchObject({ window: "daily", remaining: "$0.99" });
   });
 
+  it("reads endpoint budget windows", async () => {
+    const endpoints = (await agent().budget()).endpoints ?? [];
+    const [first] = endpoints;
+    expect([first?.pattern, first?.window, first?.remaining]).toEqual(["api.example.com/search*", "hourly", "$0.08"]);
+  });
+
   it("lists receipts with a limit", async () => {
     const receipts = await agent().receipts(5);
     expect(receipts[0]?.status).toBe("settled");
@@ -279,7 +351,59 @@ describe("AgentClient", () => {
 
   it("reads an approval and encodes its id", async () => {
     const approval = await agent().approval("apr_1");
-    expect(approval).toMatchObject({ id: "apr_1", status: "pending" });
+    expect(approval).toMatchObject({ id: "apr_1", status: "pending", attempt: "att_2", decidedBy: null });
+    expect(seen[0]?.url).toBe("/_spendctl/agent/approvals/apr_1");
+    await expect(agent().approval("apr 1/x")).rejects.toThrow("Unknown approval apr 1/x for this agent.");
+    expect(seen[1]?.url).toBe("/_spendctl/agent/approvals/apr%201%2Fx");
+  });
+
+  it("reads who decided an approval", async () => {
+    const approval = await agent().approval("apr_done");
+    expect([approval.status, approval.decidedBy, approval.note]).toEqual(["approved", "cli", "fine"]);
+  });
+
+  it("long-polls an approval with wait and answers when the wait runs out", async () => {
+    const approval = await agent().approval("apr_1", { wait: 0.2 });
+    expect(approval.status).toBe("pending");
+    expect(seen[0]?.url).toBe("/_spendctl/agent/approvals/apr_1?wait=0.2");
+    await agent().approval("apr_1", { wait: 0 });
+    expect(seen[1]?.url).toBe("/_spendctl/agent/approvals/apr_1");
+  });
+
+  it("stops waiting when the signal aborts", async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    const waiting = agent().approval("apr_1", { wait: 25, signal: controller.signal });
+    setTimeout(() => controller.abort(), 50);
+    await expect(waiting).rejects.toThrow(/abort/i);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it("withdraws a pending approval with a note", async () => {
+    const approval = await agent().withdraw("apr_1", "task cancelled");
+    expect(approval).toMatchObject({
+      id: "apr_1",
+      status: "withdrawn",
+      decidedBy: "agent:bot",
+      note: "task cancelled",
+    });
+    expect(seen[0]?.method).toBe("POST");
+    expect(seen[0]?.url).toBe("/_spendctl/agent/approvals/apr_1/withdraw");
+    expect(seen[0]?.headers["content-type"]).toBe("application/json");
+    expect(seen[0]?.headers["x-spendctl-token"]).toBe(AGENT_TOKEN);
+    expect(JSON.parse(seen[0]?.body ?? "")).toEqual({ note: "task cancelled" });
+    await agent().withdraw("apr_1");
+    expect(JSON.parse(seen[1]?.body ?? "")).toEqual({});
+  });
+
+  it("refuses to withdraw what a human already decided, with the sidecar's message", async () => {
+    await expect(agent().withdraw("apr_done")).rejects.toThrow("Approval apr_done is already approved by cli (fine).");
+  });
+
+  it("explains an unknown approval or a sidecar too old to withdraw", async () => {
+    await expect(agent().withdraw("apr_other")).rejects.toThrow(
+      "Unknown approval apr_other for this agent, or the sidecar is older than 0.7 and cannot withdraw.",
+    );
   });
 
   it("exposes the wrapped fetch and surfaces API errors", async () => {
