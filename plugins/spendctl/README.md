@@ -1,6 +1,6 @@
 # spendctl plugin
 
-Connects Claude Code or Cursor to the [spendctl](https://spendctl.dev) sidecar you run, so every paid HTTP call (x402, MPP) the agent makes is checked against your policy, held for approval above your thresholds, and written to the ledger. The plugin is a thin wrapper: an MCP server config that starts `spendctl mcp` (tools `pay`, `check_budget`, `list_receipts`) and a skill that tells the agent how to behave around budgets, refusals and approvals.
+Connects Claude Code or Cursor to the [spendctl](https://spendctl.dev) sidecar you run, so every paid HTTP call (x402, MPP) the agent makes is checked against your policy, held for approval above your thresholds, and written to the ledger. The plugin is a thin wrapper: an MCP server config that starts `spendctl mcp` (tools `pay`, `await_approval`, `withdraw_approval`, `check_budget`, `list_receipts`) and a skill that tells the agent how to behave around budgets, refusals and approvals.
 
 The sidecar itself ships on npm as `spendctl` (proprietary licence, Free tier included); only this wrapper is Apache-2.0. Nothing here holds keys, funds or the admin token.
 

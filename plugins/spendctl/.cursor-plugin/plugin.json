@@ -1,7 +1,7 @@
 {
   "name": "spendctl",
-  "version": "0.1.0",
-  "description": "Pay through the spendctl sidecar you run: every paid HTTP call (x402, MPP) is checked against your policy, held for approval above your thresholds, and written to the ledger. Tools: pay, check_budget, list_receipts.",
+  "version": "0.2.0",
+  "description": "Pay through the spendctl sidecar you run: every paid HTTP call (x402, MPP) is checked against your policy, held for approval above your thresholds, and written to the ledger. Tools: pay, await_approval, withdraw_approval, check_budget, list_receipts.",
   "author": {
     "name": "Mirai Studio, Inc.",
     "email": "security@spendctl.dev"

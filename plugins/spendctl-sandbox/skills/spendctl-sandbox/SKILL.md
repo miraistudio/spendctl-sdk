@@ -1,11 +1,11 @@
 ---
 name: spendctl-sandbox
-description: Try spendctl's spend policy for AI agents (budgets, allowlists, human approvals, receipts) against mock paid APIs in a login-free sandbox, using the sandbox_create, sandbox_pay, check_budget, list_receipts, get_policy and approve tools. Use when the user wants to see what spendctl does, test a policy preset, or walk through a refusal and an approval without real funds.
+description: Try spendctl's spend policy for AI agents (budgets, allowlists, human approvals, receipts) against mock paid APIs in a login-free sandbox, using the sandbox_create, sandbox_pay, await_approval, withdraw_approval, check_budget, list_receipts, get_policy and approve tools. Use when the user wants to see what spendctl does, test a policy preset, or walk through a refusal and an approval without real funds.
 ---
 
 # The spendctl sandbox
 
-A hosted, throwaway copy of the spendctl sidecar: a mock wallet, a mock x402 facilitator and two mock paid APIs. Nothing here moves real money, and each sandbox disappears two hours after its last call. The tools are the same ones an agent uses with a real sidecar, plus `sandbox_create` and `approve`.
+A hosted, throwaway copy of the spendctl sidecar: a mock wallet, a mock x402 facilitator and two mock paid APIs. Nothing here moves real money, and each sandbox disappears two hours after its last call. The tools are the same ones an agent uses with a real sidecar, plus `sandbox_create`, `get_policy` and `approve`.
 
 ## Walkthrough
 
@@ -15,8 +15,9 @@ A hosted, throwaway copy of the spendctl sidecar: a mock wallet, a mock x402 fac
    - `approvals`: payments at or above the threshold wait for a human; shows the hold → approve → retry loop.
 2. **Pay** with `sandbox_pay` using an endpoint the create result listed (for example `https://weather.sandbox.spendctl.dev/weather?city=Kyoto`). Give each logical call an `idempotencyKey` so a retry never pays twice. Use `dryRun: true` to show the decision without paying.
 3. **Read the outcome.** A paid call reports the amount and a receipt id; a refusal names the rule that fired; a hold returns an approval id.
-4. **For a hold**, explain to the user that in the real product a human approves (`spendctl approve <id>`, the dashboard, or Slack). In the sandbox you play the approver: call `approve` with the approval id (or `decision: "deny"` to show a denial), then call `sandbox_pay` again with the same URL, the same `idempotencyKey` and `approvalId` set, which completes the held payment.
-5. **Explain with evidence.** `check_budget` shows what each window has left, `list_receipts` the attempts so far, `get_policy` the sandbox's `spendctl.yaml`. Quote them instead of guessing why something was refused.
+4. **For a hold**, explain to the user that in the real product a human approves (`spendctl approve <id>`, the dashboard, or Slack) while the agent waits with `await_approval`, which never pays. In the sandbox you play the approver: call `approve` with the approval id (or `decision: "deny"` to show a denial), then `await_approval` to show the agent seeing the decision, then call `sandbox_pay` again with the same URL, the same `idempotencyKey` and `approvalId` set, which completes the held payment.
+5. **To show a cancelled task**, hold a payment, then call `withdraw_approval` with its id and a short note (for example `"task cancelled"`) instead of approving. Nothing is paid, a later `approve` on that id is refused, `await_approval` answers `withdrawn` at once, and `list_receipts` shows the attempt as withdrawn, which is distinct from a human's denial.
+6. **Explain with evidence.** `check_budget` shows what each window has left, `list_receipts` the attempts so far, `get_policy` the sandbox's `spendctl.yaml`. Quote them instead of guessing why something was refused.
 
 ## Rules
 
