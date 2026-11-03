@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0
+
 Catches up with sidecar 0.6 and 0.7. Against an older sidecar the new fields are absent, `wait` is ignored and `withdraw()` throws.
 
 - `AgentClient.approval(id, { wait, signal })`: long-poll for a decision (the sidecar caps `wait` at 25 s; waiting never pays). Returns `AgentApproval` (exported): `id`, `status`, `expiresAt`, plus `attempt`, `decidedAt`, `note` (0.6) and `decidedBy` (0.7: `cli`, `admin-api`, `review-link`, `timeout` or `agent:<name>`).
