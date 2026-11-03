@@ -23,7 +23,8 @@ if (res.ok) {
 } else {
   const refusal = await readRefusal(res);
   if (refusal?.error === "spendctl_approval_required") {
-    // A human was asked. Poll `AgentClient.approval(refusal.approval)` or retry later with
+    // A human was asked, and has until refusal.approvalExpiresAt. Wait with
+    // `AgentClient.approval(refusal.approval, { wait: 25 })`, then retry with
     // { headers: { "x-spendctl-approval": refusal.approval } } once it is approved.
   }
 }
@@ -40,21 +41,29 @@ Options (each falls back to an environment variable):
 
 Requests that already point at the sidecar, or that are not absolute `http(s)` URLs, go through untouched. The agent side never holds a wallet key or the admin token.
 
-`readRefusal(response)` returns the sidecar's refusal body (`spendctl_denied`, `spendctl_approval_required`, `spendctl_dry_run`) or `undefined` when the response was paid or did not come from spendctl. It clones the body, so the response stays readable.
+`readRefusal(response)` returns the sidecar's refusal body (`spendctl_denied`, `spendctl_approval_required`, `spendctl_dry_run`) or `undefined` when the response was paid or did not come from spendctl. It clones the body, so the response stays readable. Besides `message` and `reasons`, it carries the approval id with its deadline (`approval`, `approvalExpiresAt`), a `hint` for the agent, and your own `Idempotency-Key` / `X-Request-Id` echoed back as `idempotencyKey` / `requestId`.
 
 ## For agents: `AgentClient`
 
-Read-only view of the agent's own budget and receipts.
+The agent's own budget, receipts and approvals. It cannot approve anything.
 
 ```ts
 import { AgentClient } from "@spendctl/client";
 
 const me = new AgentClient({ agent: "researcher" });
-const budget = await me.budget(); // { windows: [{ window: "daily", limit, spent, remaining }], ... }
+const budget = await me.budget(); // { windows: [{ window: "daily", limit, spent, remaining }], endpoints: [{ pattern, window, … }], … }
 const receipts = await me.receipts(20);
-const approval = await me.approval("apr_…"); // { id, status, expiresAt }
+
+// Wait up to 25 s for a human to decide; returns early on a decision. Waiting never pays.
+const approval = await me.approval("apr_…", { wait: 25 });
+// { id, status: "pending" | "approved" | "denied" | "expired" | "withdrawn", expiresAt, attempt, decidedAt, decidedBy, note }
+
+// The task no longer needs the payment: take the approval back so a late approve cannot pay for it.
+await me.withdraw("apr_…", "task cancelled"); // status "withdrawn", decidedBy "agent:researcher"
 me.fetch; // the same wrapped fetch as wrapFetch()
 ```
+
+Which fields you get depends on the sidecar: `endpoints`, `wait`, `approvalExpiresAt` and the decision fields need 0.6 or later; `withdraw()`, `decidedBy` and the `withdrawn` status need 0.7 or later. An older sidecar leaves the fields out and ignores `wait`; `withdraw()` against one throws.
 
 ## For humans and tooling: `AdminClient`
 

@@ -20,6 +20,20 @@ export interface AgentClientOptions {
   fetch?: typeof fetch;
 }
 
+/** One rolling budget window, amounts as USD strings ("$0.99"). */
+export interface BudgetWindow {
+  window: string;
+  limit: string;
+  spent: string;
+  remaining: string;
+}
+
+/** A rolling window of an `endpointBudget`, counting only payments to endpoints matching `pattern`. */
+export interface EndpointWindow extends BudgetWindow {
+  /** Host/path pattern from spendctl.yaml, e.g. "api.example.com/v1/search*". */
+  pattern: string;
+}
+
 export interface Budget {
   agent: string;
   mode: string;
@@ -27,7 +41,45 @@ export interface Budget {
   requireApprovalAbove: string | null;
   onBudgetExceeded: string;
   allow: string[];
-  windows: Array<{ window: string; limit: string; spent: string; remaining: string }>;
+  windows: BudgetWindow[];
+  /** Per-endpoint windows, on top of `windows` (sidecar 0.6 and later; absent before). */
+  endpoints?: EndpointWindow[];
+}
+
+/**
+ * `withdrawn`: the agent took its own approval back before a human decided (sidecar 0.7 and later).
+ * Nothing was paid, a late approve is refused, and it is distinct from a human's `denied`.
+ */
+export type ApprovalStatus = "pending" | "approved" | "denied" | "expired" | "withdrawn";
+
+/** What an agent sees of its own approval, as `AgentClient.approval()` and `withdraw()` return it. */
+export interface AgentApproval {
+  id: string;
+  status: ApprovalStatus;
+  /** ISO 8601. After this, a pending approval expires and the payment is not made. */
+  expiresAt: string;
+  /** Ledger entry (attempt id) the approval was opened for (sidecar 0.6 and later). */
+  attempt?: string;
+  /** ISO 8601, null while pending (sidecar 0.6 and later). */
+  decidedAt?: string | null;
+  /**
+   * Who decided: `cli`, `admin-api`, `review-link`, `timeout`, or `agent:<name>` for a withdrawal
+   * (sidecar 0.7 and later).
+   */
+  decidedBy?: string | null;
+  /** The human's or the agent's note, if any (sidecar 0.6 and later). */
+  note?: string | null;
+}
+
+export interface ApprovalOptions {
+  /**
+   * Seconds to wait for a decision while the approval is pending (long poll). The sidecar caps it
+   * at 25 so the call fits the ~30 s most MCP gateways allow, and answers with whatever the
+   * approval is then; waiting never pays. Sidecars before 0.6 ignore it and answer at once.
+   */
+  wait?: number;
+  /** Abort the wait early. */
+  signal?: AbortSignal;
 }
 
 export interface Receipt {
@@ -49,7 +101,7 @@ export interface PendingApproval {
   id: string;
   attemptId: string;
   agent: string;
-  status: "pending" | "approved" | "denied" | "expired";
+  status: ApprovalStatus;
   createdAt: number;
   expiresAt: number;
   host: string;
@@ -81,8 +133,19 @@ export interface SpendctlRefusal {
   attempt?: string;
   decision?: string;
   amount?: string;
+  /** Approval id when a human must decide first. */
   approval?: string;
+  /** ISO 8601 deadline for that decision (sidecar 0.6 and later). */
+  approvalExpiresAt?: string;
+  /** What to do next, written for the agent to read. */
+  hint?: string;
   reasons?: Array<{ code: string; message: string }>;
+  /** The agent's own `Idempotency-Key` and `X-Request-Id`, echoed back (sidecar 0.5 and later). */
+  idempotencyKey?: string;
+  requestId?: string;
+  /** Dry run only: always true, with what spendctl would have done ("allow", "approve" or "deny"). */
+  dryRun?: boolean;
+  wouldBe?: string;
 }
 
 function resolve(options: AgentClientOptions) {
@@ -142,26 +205,55 @@ export class AgentClient {
     this.fetch = wrapFetch(options);
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const headers: Record<string, string> = {};
+  private async request<T>(path: string, init: RequestInit = {}, notFound?: string): Promise<T> {
+    const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
     if (this.cfg.agent) headers["x-spendctl-agent"] = this.cfg.agent;
     if (this.cfg.token) headers["x-spendctl-token"] = this.cfg.token;
-    const response = await this.cfg.fetch(`${this.cfg.url}/_spendctl/agent/${path}`, { headers });
-    const body = (await response.json()) as T & { message?: string };
-    if (!response.ok) throw new Error(body.message ?? `spendctl ${path} failed with ${response.status}`);
+    const response = await this.cfg.fetch(`${this.cfg.url}/_spendctl/agent/${path}`, { ...init, headers });
+    const body = (await response.json()) as T & { error?: string; message?: string };
+    if (!response.ok) {
+      const fallback =
+        body.error === "not_found" && notFound ? notFound : `spendctl ${path} failed with ${response.status}`;
+      throw new Error(body.message ?? fallback);
+    }
     return body;
   }
 
   budget(): Promise<Budget> {
-    return this.get<Budget>("budget");
+    return this.request<Budget>("budget");
   }
 
   async receipts(limit = 20): Promise<Receipt[]> {
-    return (await this.get<{ receipts: Receipt[] }>(`receipts?limit=${limit}`)).receipts;
+    return (await this.request<{ receipts: Receipt[] }>(`receipts?limit=${limit}`)).receipts;
   }
 
-  approval(id: string): Promise<{ id: string; status: string; expiresAt: string }> {
-    return this.get(`approvals/${encodeURIComponent(id)}`);
+  /**
+   * Reads one of this agent's approvals. With `wait`, the call returns as soon as a human decides,
+   * or after `wait` seconds with the approval still pending. Nothing is paid here: once it is
+   * `approved`, repeat the request with header `x-spendctl-approval: <id>` to pay.
+   */
+  approval(id: string, options: ApprovalOptions = {}): Promise<AgentApproval> {
+    const wait = options.wait && options.wait > 0 ? `?wait=${options.wait}` : "";
+    return this.request<AgentApproval>(
+      `approvals/${encodeURIComponent(id)}${wait}`,
+      { signal: options.signal },
+      `Unknown approval ${id} for this agent.`,
+    );
+  }
+
+  /**
+   * Takes back one of this agent's pending approvals because the task no longer needs the payment,
+   * so a late approve cannot pay for it (sidecar 0.7 and later). Returns the approval, now
+   * `withdrawn`. Throws with the sidecar's message if a human already decided or it expired; read
+   * `approval(id)` for the outcome. `note` (at most 200 characters) reaches the humans and the ledger.
+   */
+  async withdraw(id: string, note?: string): Promise<AgentApproval> {
+    const body = await this.request<{ approval: AgentApproval }>(
+      `approvals/${encodeURIComponent(id)}/withdraw`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(note ? { note } : {}) },
+      `Unknown approval ${id} for this agent, or the sidecar is older than 0.7 and cannot withdraw.`,
+    );
+    return body.approval;
   }
 }
 
