@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -91,8 +92,25 @@ def _handler(state: FakeSidecar):
                             "decision": "pending_approval",
                             "amount": "$1.00",
                             "approval": "apr_1",
+                            "approvalExpiresAt": "2026-01-01T00:15:00.000Z",
+                            "hint": "Ask a human to run `spendctl approve apr_1`, then retry.",
+                            "idempotencyKey": headers.get("idempotency-key"),
+                            "requestId": headers.get("x-request-id"),
                         },
                         {"x-spendctl-decision": "pending_approval", "x-spendctl-attempt": "att_held"},
+                    )
+                if "/dry" in target:
+                    return self._send(
+                        402,
+                        {
+                            "error": "spendctl_dry_run",
+                            "message": "Dry run: spendctl would pay $0.01 to api.example.com/dry.",
+                            "attempt": "att_dry",
+                            "decision": "dry-run",
+                            "dryRun": True,
+                            "wouldBe": "allow",
+                        },
+                        {"x-spendctl-decision": "dry-run", "x-spendctl-attempt": "att_dry"},
                     )
                 if "/redirect" in target:
                     self.send_response(302)
@@ -149,10 +167,51 @@ def _handler(state: FakeSidecar):
                             "receipts": [{"id": "att_1", "status": "settled", "limit": query.get("limit")}],
                         },
                     )
+                if path.startswith("/_spendctl/agent/approvals/") and path.endswith("/withdraw"):
+                    approval_id = path.split("/")[-2]
+                    if approval_id == "apr_unknown":
+                        return self._send(404, {"error": "not_found"})
+                    if approval_id == "apr_decided":
+                        decided = {"id": approval_id, "status": "approved", "decidedBy": "cli"}
+                        return self._send(
+                            409,
+                            {
+                                "error": "already_decided",
+                                "message": "Approval apr_decided is already approved by cli.",
+                                "approval": decided,
+                            },
+                        )
+                    payload = json.loads(body or b"{}")
+                    return self._send(
+                        200,
+                        {
+                            "approval": {
+                                "id": approval_id,
+                                "status": "withdrawn",
+                                "decidedBy": f"agent:{headers.get('x-spendctl-agent')}",
+                                "note": payload.get("note"),
+                            }
+                        },
+                    )
                 if path.startswith("/_spendctl/agent/approvals/"):
                     approval_id = path.rsplit("/", 1)[1]
+                    if approval_id == "apr_unknown":
+                        return self._send(404, {"error": "not_found"})
+                    wait = float(query.get("wait") or 0)
+                    if wait:
+                        # Long poll: hold the request like the sidecar does until a human decides.
+                        time.sleep(wait)
                     return self._send(
-                        200, {"id": approval_id, "status": "pending", "expiresAt": "2026-01-01T00:00:00.000Z"}
+                        200,
+                        {
+                            "id": approval_id,
+                            "status": "approved" if wait else "pending",
+                            "attempt": "att_held",
+                            "expiresAt": "2026-01-01T00:00:00.000Z",
+                            "decidedAt": "2026-01-01T00:00:01.000Z" if wait else None,
+                            "decidedBy": "cli" if wait else None,
+                            "note": None,
+                        },
                     )
                 return self._send(404, {"error": "not_found", "message": "No such agent route."})
 
