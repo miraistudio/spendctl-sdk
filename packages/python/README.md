@@ -27,8 +27,8 @@ with httpx_client(agent="researcher") as http:  # reads SPENDCTL_URL / SPENDCTL_
         print(res.headers["x-spendctl-amount"])  # "$0.01"
     elif refusal := read_refusal(res):
         if refusal.needs_approval:
-            # A human was asked. Poll AgentClient.approval(refusal.approval), then retry with
-            # headers={"x-spendctl-approval": refusal.approval}.
+            # A human was asked. AgentClient().approval(refusal.approval, wait=25) returns once
+            # they decide; when approved, retry with headers={"x-spendctl-approval": refusal.approval}.
             ...
 ```
 
@@ -67,21 +67,25 @@ Options, each falling back to an environment variable:
 
 Requests that already point at the sidecar, or that are not absolute `http(s)` URLs, go through untouched. The agent side never holds a wallet key or the admin token. `sidecar_headers(target, ...)` returns the three headers for any other HTTP library.
 
-`read_refusal(response)` accepts `httpx.Response`, `requests.Response` and the `SidecarResponse` from `pay()`; it returns a `Refusal` (`error`, `message`, `attempt`, `decision`, `amount`, `approval`, `reasons`; properties `denied`, `needs_approval`, `dry_run`) or `None` when the response was paid or did not come from spendctl.
+`read_refusal(response)` accepts `httpx.Response`, `requests.Response` and the `SidecarResponse` from `pay()`; it returns a `Refusal` (`error`, `message`, `attempt`, `decision`, `amount`, `approval`, `approval_expires_at`, `hint`, `reasons`, `idempotency_key`, `request_id`, `would_be`; properties `denied`, `needs_approval`, `dry_run`) or `None` when the response was paid or did not come from spendctl.
 
 ## For agents: `AgentClient`
 
-Read-only view of the agent's own budget and receipts.
+The agent's own budget, receipts and approvals. It can wait for a human's decision and withdraw an approval it no longer needs, never approve or deny.
 
 ```python
 from spendctl_sdk import AgentClient
 
 me = AgentClient(agent="researcher")
-me.budget()  # {"windows": [{"window": "daily", "limit": ..., "spent": ..., "remaining": ...}], ...}
+me.budget()  # {"windows": [{"window": "daily", "limit": ..., "spent": ..., "remaining": ...}], "endpoints": [...], ...}
 me.receipts(20)
-me.approval("apr_…")  # {"id", "status", "expiresAt"}
+me.approval("apr_…")  # {"id", "status", "expiresAt", "attempt", "decidedAt", "decidedBy", "note"}
+me.approval("apr_…", wait=25)  # long poll: returns as soon as a human decides
+me.withdraw("apr_…", "task cancelled")  # the task no longer needs it, so a late approve cannot pay
 me.pay("https://api.example.com/paid")  # pay() with this client's url, agent and token
 ```
+
+`status` is `pending`, `approved`, `denied`, `expired` or `withdrawn`. Waiting never pays: once the approval is `approved`, repeat the request with `approval=` (or the `x-spendctl-approval` header). The sidecar caps `wait` at 25 s, and the call's HTTP timeout is raised to `wait` plus 5 s. `withdraw()` raises `SpendctlError` with status 409 when a human already decided or the approval expired; `.body["approval"]` holds the outcome. `wait`, `endpoints` and the extra approval fields need sidecar 0.6, `withdraw()` and `decidedBy` 0.7; an older sidecar answers at once and leaves them out.
 
 ## For humans and tooling: `AdminClient`
 

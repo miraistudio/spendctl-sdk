@@ -68,6 +68,28 @@ def test_pay_denied_and_held(sidecar: FakeSidecar) -> None:
     assert retried.ok and retried.json()["approval"] == "apr_1"
 
 
+def test_refusal_fields_from_newer_sidecars(sidecar: FakeSidecar) -> None:
+    held = pay(
+        "https://api.example.com/hold",
+        url=sidecar.url,
+        agent="bot",
+        headers={"idempotency-key": "task-42", "x-request-id": "req-7"},
+    )
+    refusal = held.refusal
+    assert refusal is not None and refusal.needs_approval
+    assert refusal.approval_expires_at == "2026-01-01T00:15:00.000Z"
+    assert refusal.hint is not None and "spendctl approve apr_1" in refusal.hint
+    assert refusal.idempotency_key == "task-42" and refusal.request_id == "req-7"
+    assert refusal.would_be is None
+
+    dry = pay("https://api.example.com/dry", url=sidecar.url, agent="bot").refusal
+    assert dry is not None and dry.dry_run and dry.would_be == "allow"
+
+    # An older sidecar sends none of them.
+    old = Refusal.from_dict({"error": "spendctl_denied", "message": "Denied."})
+    assert (old.approval_expires_at, old.hint, old.idempotency_key, old.request_id) == (None,) * 4
+
+
 def test_pay_passes_sidecar_urls_through_and_does_not_follow_redirects(sidecar: FakeSidecar) -> None:
     # A URL on the sidecar itself is sent as is: no gateway headers are added, so pass the token explicitly.
     direct = pay(
@@ -182,6 +204,40 @@ def test_agent_client(sidecar: FakeSidecar) -> None:
     assert info.value.status == 401 and "Agent token required" in str(info.value)
 
 
+def test_agent_client_waits_for_and_withdraws_approvals(sidecar: FakeSidecar) -> None:
+    me = AgentClient(url=sidecar.url, agent="researcher", token=AGENT_TOKEN, timeout=0.5)
+    now = me.approval("apr_1")
+    assert now["status"] == "pending" and now["attempt"] == "att_held" and now["decidedBy"] is None
+    assert sidecar.last.path == "/_spendctl/agent/approvals/apr_1"
+
+    # The long poll outlasts the client's 0.5 s timeout: the client gives the sidecar `wait` plus a margin.
+    decided = me.approval("apr_1", wait=1)
+    assert decided["status"] == "approved" and decided["decidedBy"] == "cli"
+    assert sidecar.last.path == "/_spendctl/agent/approvals/apr_1?wait=1"
+
+    withdrawn = me.withdraw("apr_1", "task cancelled")
+    assert withdrawn == {
+        "id": "apr_1",
+        "status": "withdrawn",
+        "decidedBy": "agent:researcher",
+        "note": "task cancelled",
+    }
+    assert sidecar.last.method == "POST" and sidecar.last.path == "/_spendctl/agent/approvals/apr_1/withdraw"
+    assert sidecar.last.headers["content-type"] == "application/json"
+    assert sidecar.last.headers["x-spendctl-token"] == AGENT_TOKEN
+    assert me.withdraw("apr_1")["note"] is None and sidecar.last.body == b"{}"
+
+    with pytest.raises(SpendctlError) as info:
+        me.withdraw("apr_decided")
+    assert info.value.status == 409 and "already approved by cli" in str(info.value)
+    assert info.value.body["approval"]["status"] == "approved"
+
+    with pytest.raises(SpendctlError, match=r"Unknown approval apr_unknown for this agent\.$"):
+        me.approval("apr_unknown")
+    with pytest.raises(SpendctlError, match="older than 0.7"):
+        me.withdraw("apr_unknown")
+
+
 def test_admin_client(sidecar: FakeSidecar) -> None:
     admin = AdminClient(ADMIN, url=sidecar.url)
     pending = admin.pending()
@@ -219,7 +275,7 @@ def test_read_refusal_ignores_non_spendctl_responses() -> None:
 
 
 def test_package_surface() -> None:
-    assert spendctl_sdk.__version__ == "0.1.0"
+    assert spendctl_sdk.__version__ == "0.2.0"
     assert spendctl_sdk.DEFAULT_URL == "http://127.0.0.1:8402"
     with pytest.raises(AttributeError):
         _ = spendctl_sdk.nope

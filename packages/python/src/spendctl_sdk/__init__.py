@@ -8,7 +8,8 @@ its wire protocol; the agent side never holds a wallet key or the admin token.
 - :class:`SidecarTransport` / :func:`httpx_client` route an ``httpx`` client through it.
 - :class:`SidecarAdapter` / :func:`requests_session` do the same for ``requests``.
 - :func:`read_refusal` explains a 402 the sidecar answered instead of the seller.
-- :class:`AgentClient` reads the agent's own budget, receipts and approvals.
+- :class:`AgentClient` reads the agent's own budget, receipts and approvals, waits for a
+  decision and withdraws an approval the task no longer needs.
 - :class:`AdminClient` approves, denies, lists the ledger and exports (admin token).
 
 Configuration falls back to the environment: ``SPENDCTL_URL`` (default
@@ -47,7 +48,7 @@ __all__ = [
     "sidecar_headers",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def __getattr__(name: str):  # noqa: ANN202 - lazy optional integrations

@@ -50,6 +50,16 @@ class Refusal:
     approval: str | None = None
     """Approval id to poll with :meth:`AgentClient.approval` and to send back as ``x-spendctl-approval``."""
     reasons: tuple[Reason, ...] = ()
+    approval_expires_at: str | None = None
+    """ISO 8601 deadline for the human's decision (sidecar 0.6 and later)."""
+    hint: str | None = None
+    """What to do next, written for the agent to read."""
+    idempotency_key: str | None = None
+    """The request's own ``Idempotency-Key``, echoed back (sidecar 0.5 and later)."""
+    request_id: str | None = None
+    """The request's own ``X-Request-Id``, echoed back (sidecar 0.5 and later)."""
+    would_be: str | None = None
+    """Dry run only: what spendctl would have done, ``allow``, ``approve`` or ``deny``."""
     raw: dict[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -79,6 +89,11 @@ class Refusal:
             amount=_opt_str(body.get("amount")),
             approval=_opt_str(body.get("approval")),
             reasons=reasons,
+            approval_expires_at=_opt_str(body.get("approvalExpiresAt")),
+            hint=_opt_str(body.get("hint")),
+            idempotency_key=_opt_str(body.get("idempotencyKey")),
+            request_id=_opt_str(body.get("requestId")),
+            would_be=_opt_str(body.get("wouldBe")),
             raw=dict(body),
         )
 
@@ -174,7 +189,8 @@ class SidecarResponse:
 
     @property
     def decision(self) -> str | None:
-        """``settled``, ``denied``, ``pending_approval``, ``failed``, ``expired`` or ``dry-run``."""
+        """For example ``settled``, ``denied``, ``pending_approval``, ``failed``, ``expired``, ``withdrawn``,
+        ``unknown`` or ``dry-run``."""
         return self.headers.get(HEADER_DECISION)
 
     @property
@@ -341,20 +357,28 @@ def _parse(response: SidecarResponse) -> Any:
     return response.text
 
 
-def _raise_for(response: SidecarResponse, what: str) -> None:
+def _raise_for(response: SidecarResponse, what: str, not_found: str | None = None) -> None:
     if response.ok:
         return
     body = _parse(response)
     detail = None
     if isinstance(body, Mapping):
-        detail = body.get("message") or body.get("error")
+        detail = body.get("message")
+        if not detail and body.get("error") == "not_found":
+            # A bare not_found does not say what was missing; the caller knows.
+            detail = not_found
+        detail = detail or body.get("error")
     raise SpendctlError(
         f"spendctl: {detail or f'{what} failed with {response.status}'}", response.status, body
     )
 
 
 class AgentClient:
-    """Read-only view of one agent's budget, receipts and approvals (no admin token needed)."""
+    """One agent's own budget, receipts and approvals (no admin token needed).
+
+    Everything here is scoped to the agent: it can read its approvals and withdraw them, never
+    approve or deny.
+    """
 
     def __init__(
         self,
@@ -378,33 +402,83 @@ class AgentClient:
         kwargs.setdefault("token", self._cfg.token)
         return pay(target, **kwargs)
 
-    def _get(self, path: str) -> Any:
+    def _request(
+        self,
+        path: str,
+        *,
+        method: str = "GET",
+        json: Any = None,
+        timeout: float | None = None,
+        not_found: str | None = None,
+    ) -> Any:
         headers: dict[str, str] = {}
         if self._cfg.agent:
             headers[HEADER_AGENT] = self._cfg.agent
         if self._cfg.token:
             headers[HEADER_TOKEN] = self._cfg.token
+        body = None
+        if json is not None:
+            body = _json.dumps(json).encode("utf-8")
+            headers["content-type"] = "application/json"
         response = _send(
             f"{self._cfg.url}/_spendctl/agent/{path}",
-            method="GET",
+            method=method,
             headers=headers,
-            body=None,
-            timeout=self._timeout,
+            body=body,
+            timeout=self._timeout if timeout is None else timeout,
             sidecar_url=self._cfg.url,
         )
-        _raise_for(response, path)
+        _raise_for(response, path, not_found)
         return _parse(response)
 
     def budget(self) -> dict[str, Any]:
-        """``{agent, mode, perRequest, requireApprovalAbove, onBudgetExceeded, allow, windows}``."""
-        return self._get("budget")
+        """``{agent, mode, perRequest, requireApprovalAbove, onBudgetExceeded, allow, windows, endpoints}``.
+
+        ``endpoints`` lists the ``endpointBudget`` windows (``pattern``, ``window``, ``limit``,
+        ``spent``, ``remaining``) on sidecar 0.6 and later, and is absent before.
+        """
+        return self._request("budget")
 
     def receipts(self, limit: int = 20) -> list[dict[str, Any]]:
-        return list(self._get(f"receipts?limit={int(limit)}").get("receipts", []))
+        return list(self._request(f"receipts?limit={int(limit)}").get("receipts", []))
 
-    def approval(self, approval_id: str) -> dict[str, Any]:
-        """``{id, status, expiresAt}`` for an approval the sidecar asked a human for."""
-        return self._get(f"approvals/{urllib.parse.quote(approval_id, safe='')}")
+    def approval(self, approval_id: str, *, wait: float | None = None) -> dict[str, Any]:
+        """``{id, status, expiresAt, attempt, decidedAt, decidedBy, note}`` for one of this agent's approvals.
+
+        ``status`` is ``pending``, ``approved``, ``denied``, ``expired`` or ``withdrawn``. With
+        ``wait`` (seconds), the call returns as soon as a human decides, or after ``wait`` seconds
+        with the approval still pending; the sidecar caps it at 25. Nothing is paid here: once it is
+        ``approved``, repeat the request with ``approval=<id>`` to pay. ``wait``, ``attempt``,
+        ``decidedAt`` and ``note`` need sidecar 0.6 (older ones answer at once), ``decidedBy`` 0.7.
+        """
+        path = f"approvals/{urllib.parse.quote(approval_id, safe='')}"
+        timeout = None
+        if wait and wait > 0:
+            path += f"?wait={wait:g}"
+            # The sidecar holds the request until a decision or `wait`; leave it time to answer.
+            timeout = max(self._timeout, wait + 5)
+        return self._request(
+            path, timeout=timeout, not_found=f"Unknown approval {approval_id} for this agent."
+        )
+
+    def withdraw(self, approval_id: str, note: str | None = None) -> dict[str, Any]:
+        """Takes back one of this agent's pending approvals because the task no longer needs the payment.
+
+        A late approve then cannot pay for it (sidecar 0.7 and later). Returns the approval, now
+        ``withdrawn``. If a human already decided or it expired, raises :class:`SpendctlError` with
+        status 409 and the outcome in ``error.body["approval"]``. ``note`` (at most 200 characters)
+        reaches the humans and the ledger.
+        """
+        body = self._request(
+            f"approvals/{urllib.parse.quote(approval_id, safe='')}/withdraw",
+            method="POST",
+            json={"note": note} if note else {},
+            not_found=(
+                f"Unknown approval {approval_id} for this agent, "
+                "or the sidecar is older than 0.7 and cannot withdraw."
+            ),
+        )
+        return dict(body["approval"])
 
 
 class AdminClient:

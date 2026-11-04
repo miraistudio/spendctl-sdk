@@ -61,17 +61,18 @@ The clients are small because the protocol is small. Anyone can write one in ano
 | `x-spendctl-agent` | request | Agent name as defined in `spendctl.yaml` |
 | `x-spendctl-token` | request | Per-agent token, when the sidecar runs with `agentAuth: token` |
 | `x-spendctl-approval` | request | Approval id to attach to a retry after a human approved |
-| `x-spendctl-decision` | response | Outcome of the attempt: `settled`, `denied`, `pending_approval`, `failed`, `expired` or `dry-run` |
+| `x-spendctl-dry-run` | request | `1` asks for a dry run of this one request (it can only reduce what happens) |
+| `x-spendctl-decision` | response | Outcome of the attempt, for example `settled`, `denied`, `pending_approval`, `failed`, `expired`, `withdrawn`, `unknown` or `dry-run` |
 | `x-spendctl-attempt` | response | Ledger id of the attempt |
 | `x-spendctl-amount` | response | Amount paid, formatted in USD |
 
-When the sidecar refuses, needs approval, or is in dry-run it answers `402` with a JSON body `{ error, message, attempt?, decision?, amount?, approval?, reasons? }` where `error` is one of `spendctl_denied`, `spendctl_approval_required`, `spendctl_dry_run`. A paid response is the seller's response with the `x-spendctl-*` headers added.
+When the sidecar refuses, needs approval, or is in dry-run it answers `402` with a JSON body `{ error, message, attempt?, decision?, amount?, approval?, approvalExpiresAt?, hint?, reasons?, idempotencyKey?, requestId?, dryRun?, wouldBe? }` where `error` is one of `spendctl_denied`, `spendctl_approval_required`, `spendctl_dry_run`. A paid response is the seller's response with the `x-spendctl-*` headers added.
 
-**Agent API (read-only, identified by `x-spendctl-agent` / `x-spendctl-token`).** `GET /_spendctl/agent/budget`, `GET /_spendctl/agent/receipts?limit=`, `GET /_spendctl/agent/approvals/:id`.
+**Agent API (identified by `x-spendctl-agent` / `x-spendctl-token`; an agent sees only its own records and can never approve).** `GET /_spendctl/agent/budget`, `GET /_spendctl/agent/receipts?limit=`, `GET /_spendctl/agent/approvals/:id?wait=` (long poll of up to 25 s for a decision; waiting never pays), `POST /_spendctl/agent/approvals/:id/withdraw` with `{ note? }` (takes back a pending approval the task no longer needs; `409` once a human decided or it expired).
 
 **Admin API (`Authorization: Bearer <admin token>` from `.spendctl/admin.token`).** `GET /_spendctl/admin/pending`, `POST /_spendctl/admin/approvals/:id/approve|deny`, `GET /_spendctl/admin/ledger`, `GET /_spendctl/admin/export?format=csv|json`, `GET /_spendctl/admin/trace/:id`, `GET /_spendctl/admin/summary`, `POST /_spendctl/admin/ledger/:id/resolve`.
 
-The protocol is versioned with the sidecar; this README tracks sidecar v0.1.
+The protocol is versioned with the sidecar; this README tracks sidecar v0.7.
 
 ## Contributing and security
 
