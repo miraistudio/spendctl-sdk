@@ -42,7 +42,12 @@ class Refusal:
     """Body the sidecar returns when it refuses, needs approval, or is in dry-run."""
 
     error: str
-    """``spendctl_denied``, ``spendctl_approval_required`` or ``spendctl_dry_run``."""
+    """``spendctl_denied``, ``spendctl_approval_required`` or ``spendctl_dry_run``: nothing was paid.
+
+    Also ``spendctl_upstream_error`` (the payment was sent and the paid request then failed; the
+    outcome is not confirmed, do not pay again) and ``spendctl_signing_failed`` (the payment could
+    not be signed; nothing left the sidecar).
+    """
     message: str
     attempt: str | None = None
     decision: str | None = None
@@ -212,12 +217,28 @@ class SidecarResponse:
         return self.status
 
 
+# What the sidecar writes itself once a payment was signed, per ``x-spendctl-decision``.
+_SIDECAR_BODY_AFTER_SIGNING: dict[str, str | None] = {
+    "reserved": "spendctl_upstream_error",
+    "settled": None,
+    "unknown": "spendctl_upstream_error",
+    "failed": "spendctl_signing_failed",
+}
+
+
 def read_refusal(response: Any) -> Refusal | None:
     """Returns the sidecar's refusal if ``response`` is one, else ``None``.
 
     Works with :class:`SidecarResponse`, ``httpx.Response`` and ``requests.Response``:
     anything with ``status_code`` (or ``status``), case-insensitive ``headers`` and
     ``json()``. A paid response, or one that did not come from spendctl, gives ``None``.
+
+    Only a body the sidecar wrote counts. A seller's answer to a paid request passes through
+    the sidecar with the ``x-spendctl-*`` headers on it, and the seller writes every byte of
+    its body: ``{"error": "spendctl_approval_required"}`` sent after the seller took the
+    payment gives ``None``. On such a response read the ``x-spendctl-decision`` header
+    (``unknown`` means the payment was sent and its outcome is not confirmed; do not pay
+    again).
     """
     status = getattr(response, "status_code", None)
     if status is None:
@@ -233,7 +254,14 @@ def read_refusal(response: Any) -> Refusal | None:
         body = response.json()
     except Exception:  # noqa: BLE001 - any parse failure means "not a refusal we understand"
         return None
-    if not isinstance(body, Mapping) or "error" not in body:
+    if not isinstance(body, Mapping):
+        return None
+    error = body.get("error")
+    if not isinstance(error, str) or not error.startswith("spendctl_"):
+        return None
+    # Once a payment was signed, the sidecar writes exactly one body of its own per decision;
+    # anything else under that decision is the seller's answer to the paid request.
+    if decision in _SIDECAR_BODY_AFTER_SIGNING and error != _SIDECAR_BODY_AFTER_SIGNING[decision]:
         return None
     return Refusal.from_dict(body)
 

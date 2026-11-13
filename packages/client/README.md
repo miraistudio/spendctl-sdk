@@ -41,7 +41,7 @@ Options (each falls back to an environment variable):
 
 Requests that already point at the sidecar, or that are not absolute `http(s)` URLs, go through untouched. The agent side never holds a wallet key or the admin token.
 
-`readRefusal(response)` returns the sidecar's refusal body (`spendctl_denied`, `spendctl_approval_required`, `spendctl_dry_run`) or `undefined` when the response was paid or did not come from spendctl. It clones the body, so the response stays readable. Besides `message` and `reasons`, it carries the approval id with its deadline (`approval`, `approvalExpiresAt`), a `hint` for the agent, and your own `Idempotency-Key` / `X-Request-Id` echoed back as `idempotencyKey` / `requestId`.
+`readRefusal(response)` returns the sidecar's refusal body (`spendctl_denied`, `spendctl_approval_required`, `spendctl_dry_run`) or `undefined` when the response was paid or did not come from spendctl. It clones the body, so the response stays readable. A seller's own error that follows a payment is never a refusal, whatever its body says: on such a response `x-spendctl-decision` is `unknown`, the payment was sent and its outcome is not confirmed, so do not pay again. When the paid request itself could not be completed the sidecar says so with `spendctl_upstream_error`, which `readRefusal` returns as well. Besides `message` and `reasons`, it carries the approval id with its deadline (`approval`, `approvalExpiresAt`), a `hint` for the agent, and your own `Idempotency-Key` / `X-Request-Id` echoed back as `idempotencyKey` / `requestId`.
 
 ## For agents: `AgentClient`
 

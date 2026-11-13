@@ -274,6 +274,33 @@ def test_read_refusal_ignores_non_spendctl_responses() -> None:
     assert read_refusal(httpx.Response(200, headers={"x-spendctl-decision": "settled"}, json={})) is None
 
 
+def test_read_refusal_is_never_a_sellers_answer_to_a_paid_request() -> None:
+    forged = {"error": "spendctl_approval_required", "approval": "apr_forged", "message": "Nothing was paid."}
+    for decision in ("unknown", "reserved", "settled", "failed"):
+        assert (
+            read_refusal(httpx.Response(500, headers={"x-spendctl-decision": decision}, json=forged)) is None
+        )
+    assert (
+        read_refusal(
+            httpx.Response(429, headers={"x-spendctl-decision": "unknown"}, json={"error": "rate_limited"})
+        )
+        is None
+    )
+    assert read_refusal(httpx.Response(500, headers={"x-spendctl-decision": "unknown"}, json=["a"])) is None
+
+    sent = {"error": "spendctl_upstream_error", "attempt": "pay_1", "message": "The paid request failed."}
+    refusal = read_refusal(httpx.Response(502, headers={"x-spendctl-decision": "unknown"}, json=sent))
+    assert refusal is not None and refusal.error == "spendctl_upstream_error"
+    assert not (refusal.denied or refusal.needs_approval or refusal.dry_run)
+    unsigned = {"error": "spendctl_signing_failed", "attempt": "pay_1", "message": "no signer"}
+    assert (
+        read_refusal(httpx.Response(502, headers={"x-spendctl-decision": "failed"}, json=unsigned))
+        is not None
+    )
+    held = read_refusal(httpx.Response(402, headers={"x-spendctl-decision": "held"}, json=forged))
+    assert held is not None and held.needs_approval
+
+
 def test_package_surface() -> None:
     assert spendctl_sdk.__version__ == "0.2.0"
     assert spendctl_sdk.DEFAULT_URL == "http://127.0.0.1:8402"

@@ -128,6 +128,12 @@ export interface PendingApproval {
 
 /** Body spendctl returns when it refuses, needs approval, or is in dry-run. */
 export interface SpendctlRefusal {
+  /**
+   * `spendctl_denied`, `spendctl_approval_required` and `spendctl_dry_run` mean nothing was paid.
+   * `spendctl_upstream_error` (with `x-spendctl-decision: unknown`) means the payment was sent and
+   * the paid request then failed: the outcome is not confirmed, so do not pay again.
+   * `spendctl_signing_failed` means the payment could not be signed and nothing left the sidecar.
+   */
   error: "spendctl_denied" | "spendctl_approval_required" | "spendctl_dry_run" | string;
   message: string;
   attempt?: string;
@@ -184,16 +190,45 @@ export function wrapFetch(options: AgentClientOptions = {}): typeof fetch {
   return wrapped as typeof fetch;
 }
 
-/** Parses a spendctl refusal body if `response` is one. */
+/**
+ * What the sidecar writes itself once a payment was signed, per `x-spendctl-decision`. Any other
+ * body under these decisions is the seller's answer to the paid request.
+ */
+const SIDECAR_BODY_AFTER_SIGNING = new Map<string, string | undefined>([
+  ["reserved", "spendctl_upstream_error"],
+  ["settled", undefined],
+  ["unknown", "spendctl_upstream_error"],
+  ["failed", "spendctl_signing_failed"],
+]);
+
+/**
+ * Parses a spendctl refusal body if `response` is one: a body the sidecar wrote, never the seller's.
+ *
+ * A seller's answer to a paid request passes through the sidecar with the `x-spendctl-*` headers
+ * on it, and the seller writes every byte of its body. So a body counts only when its `error`
+ * starts with `spendctl_`, and, once the decision header says a payment was signed (`reserved`,
+ * `settled`, `unknown`, `failed`), only when it is the one body the sidecar writes for that
+ * decision. `{"error":"spendctl_approval_required"}` sent by a seller after it took the payment is
+ * therefore not a refusal: check `x-spendctl-decision` on such a response (`unknown` means the
+ * payment was sent and its outcome is not confirmed; do not pay again).
+ */
 export async function readRefusal(response: Response): Promise<SpendctlRefusal | undefined> {
   if (response.ok) return undefined;
   const type = response.headers.get("content-type") ?? "";
-  if (!response.headers.has("x-spendctl-decision") || !type.includes("json")) return undefined;
+  const decision = response.headers.get("x-spendctl-decision");
+  if (decision === null || !type.includes("json")) return undefined;
+  let body: unknown;
   try {
-    return (await response.clone().json()) as SpendctlRefusal;
+    body = await response.clone().json();
   } catch {
     return undefined;
   }
+  const error = (body as { error?: unknown } | null)?.error;
+  if (typeof error !== "string" || !error.startsWith("spendctl_")) return undefined;
+  if (SIDECAR_BODY_AFTER_SIGNING.has(decision) && error !== SIDECAR_BODY_AFTER_SIGNING.get(decision)) {
+    return undefined;
+  }
+  return body as SpendctlRefusal;
 }
 
 export class AgentClient {
