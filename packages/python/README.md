@@ -67,7 +67,7 @@ Options, each falling back to an environment variable:
 
 Requests that already point at the sidecar, or that are not absolute `http(s)` URLs, go through untouched. The agent side never holds a wallet key or the admin token. `sidecar_headers(target, ...)` returns the three headers for any other HTTP library.
 
-`read_refusal(response)` accepts `httpx.Response`, `requests.Response` and the `SidecarResponse` from `pay()`; it returns a `Refusal` (`error`, `message`, `attempt`, `decision`, `amount`, `approval`, `approval_expires_at`, `hint`, `reasons`, `idempotency_key`, `request_id`, `would_be`; properties `denied`, `needs_approval`, `dry_run`) or `None` when the response was paid or did not come from spendctl.
+`read_refusal(response)` accepts `httpx.Response`, `requests.Response` and the `SidecarResponse` from `pay()`; it returns a `Refusal` (`error`, `message`, `attempt`, `decision`, `amount`, `approval`, `approval_expires_at`, `hint`, `reasons`, `idempotency_key`, `request_id`, `would_be`; properties `denied`, `needs_approval`, `dry_run`) or `None` when the response was paid or did not come from spendctl. A seller's own error that follows a payment is never a refusal, whatever its body says: on such a response the `x-spendctl-decision` header is `unknown`, the payment was sent and its outcome is not confirmed, so do not pay again. When the paid request itself could not be completed the sidecar says so with `spendctl_upstream_error`, which `read_refusal` returns as well (none of `denied`, `needs_approval`, `dry_run` is set on it).
 
 ## For agents: `AgentClient`
 
