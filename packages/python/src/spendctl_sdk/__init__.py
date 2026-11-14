@@ -48,7 +48,7 @@ __all__ = [
     "sidecar_headers",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 def __getattr__(name: str):  # noqa: ANN202 - lazy optional integrations
