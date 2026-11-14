@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - `read_refusal()` (and `SidecarResponse.refusal`) returns only a body the sidecar wrote. A seller's answer to a paid request passes through the sidecar with the `x-spendctl-*` headers on it, so a seller that took the payment and answered an error shaped like a refusal (`{"error": "spendctl_approval_required", …}`) was returned as one, and a caller would read "nothing was paid". The body's `error` now has to start with `spendctl_`, and once `x-spendctl-decision` says a payment was signed (`reserved`, `settled`, `unknown`, `failed`) only the body the sidecar writes for that decision counts (`spendctl_upstream_error`, or `spendctl_signing_failed` under `failed`). On any other error response, read `x-spendctl-decision`: `unknown` means the payment was sent and its outcome is not confirmed.
 

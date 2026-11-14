@@ -302,7 +302,7 @@ def test_read_refusal_is_never_a_sellers_answer_to_a_paid_request() -> None:
 
 
 def test_package_surface() -> None:
-    assert spendctl_sdk.__version__ == "0.2.0"
+    assert spendctl_sdk.__version__ == "0.2.1"
     assert spendctl_sdk.DEFAULT_URL == "http://127.0.0.1:8402"
     with pytest.raises(AttributeError):
         _ = spendctl_sdk.nope
